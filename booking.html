@@ -1,0 +1,157 @@
+
+
+<!-- public/booking.html -->
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Booking - Gumbira Park</title>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box} body{font-family:'Open Sans',sans-serif;margin:0;background:#f4f7f5;color:#333}
+  .wrap{max-width:980px;margin:24px auto;padding:20px}
+  .card{background:#fff;border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+  h1{color:#2E8B57;margin-bottom:12px}
+  .row{display:flex;gap:16px;flex-wrap:wrap}
+  .col{flex:1 1 280px}
+  label{display:block;margin-bottom:6px;font-weight:700;color:#2E8B57}
+  select,input[type="text"],input[type="date"]{width:100%;padding:10px;border-radius:8px;border:1px solid #ddd}
+  button{background:#2E8B57;color:#fff;border:none;padding:12px;border-radius:10px;font-weight:700;cursor:pointer}
+  button:disabled{background:#b82d2d;opacity:0.9}
+  .legend{margin-top:10px;font-size:13px;color:#666}
+  .qr-box{text-align:center;margin-top:14px}
+  .booked-list{margin-top:10px;padding-left:18px;color:#333}
+  @media(max-width:720px){.row{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Booking Sewa Lahan - Gumbira Park</h1>
+
+    <div class="row">
+      <div class="col">
+        <label for="area">Pilih Area</label>
+<select id="area">
+  <option value="main_ground">Main Ground — IDR 2.500</option>
+  <option value="multifunction_ground">Multifunction Ground — IDR 1.800.000</option>
+  <option value="mini_ground">Mini Ground — IDR 1.200.000</option>
+</select>
+
+
+        <label for="date" style="margin-top:12px">Pilih Tanggal</label>
+        <input type="date" id="date">
+        
+
+        <label for="name" style="margin-top:12px">Nama</label>
+        <input type="text" id="name" placeholder="Nama lengkap">
+
+        <label for="phone" style="margin-top:12px">No. Telepon</label>
+        <input type="text" id="phone" placeholder="0812xxxx">
+
+        <label for="email" style="margin-top:12px">Email (opsional)</label>
+        <input type="text" id="email" placeholder="email@domain.com">
+
+        <div style="margin-top:14px">
+          <button id="bookBtn">Buat Booking & Dapatkan QR</button>
+        </div>
+        <div class="legend">
+          <div>🔔 Pembayaran via QRIS dinamis. Setelah pembayaran terdeteksi, tanggal akan otomatis dikunci dan status berubah menjadi <strong>paid</strong>.</div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="card" style="padding:12px">
+          <h3>Status & QR</h3>
+          <div id="status">Pilih area & tanggal lalu klik "Buat Booking".</div>
+          <div class="qr-box" id="qrBox"></div>
+        </div>
+
+        <div class="card" style="margin-top:12px;padding:12px">
+          <h3>Daftar Tanggal Terbooking (Area terpilih)</h3>
+          <ul id="bookedList" class="booked-list"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function fetchAreas(){
+  const res = await fetch('/api/areas');
+  const areas = await res.json();
+  const sel = document.getElementById('area');
+  sel.innerHTML = '';
+  areas.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.id;
+    opt.textContent = a.name + ' — IDR ' + Number(a.price_per_day).toLocaleString();
+    sel.appendChild(opt);
+  });
+  loadBooked();
+}
+async function loadBooked(){
+  const areaId = document.getElementById('area').value;
+  if(!areaId) return;
+  const res = await fetch(`/api/bookings?area_id=${areaId}`);
+  const booked = await res.json();
+  const ul = document.getElementById('bookedList');
+  ul.innerHTML = '';
+  booked.forEach(b => {
+    const li = document.createElement('li');
+    li.textContent = b.date + ' — ' + b.status;
+    ul.appendChild(li);
+  });
+}
+
+document.getElementById('area').addEventListener('change', loadBooked);
+
+document.getElementById('bookBtn').addEventListener('click', async () => {
+  const area_id = document.getElementById('area').value;
+  const date = document.getElementById('date').value;
+  const name = document.getElementById('name').value.trim();
+  const phone = document.getElementById('phone').value.trim();
+  const email = document.getElementById('email').value.trim();
+
+  if(!area_id || !date || !name) return alert('Lengkapi field area, tanggal, dan nama.');
+
+  document.getElementById('bookBtn').disabled = true;
+  document.getElementById('status').textContent = 'Membuat booking...';
+
+  try{
+    const resp = await fetch('/api/bookings', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ area_id, date, name, phone, email })
+    });
+    if(resp.status === 409) {
+      document.getElementById('status').textContent = 'Tanggal sudah dibooking, pilih tanggal lain.';
+      document.getElementById('bookBtn').disabled = false;
+      loadBooked();
+      return;
+    }
+    const data = await resp.json();
+    if(data.qr_url){
+      document.getElementById('status').innerHTML = `Booking dibuat (#${data.bookingId}). Silakan bayar IDR ${Number(data.total_amount).toLocaleString()}`;
+      document.getElementById('qrBox').innerHTML = `<img src="${data.qr_url}" alt="QR" style="max-width:260px">`;
+      // optionally show link
+      const a = document.createElement('a');
+      a.href = data.qr_url; a.target='_blank'; a.textContent='Buka QR'; a.style.display='block'; a.style.marginTop='8px';
+      document.getElementById('qrBox').appendChild(a);
+    } else {
+      document.getElementById('status').textContent = 'Terjadi kesalahan saat membuat QR.';
+    }
+    loadBooked();
+  } catch(e){
+    console.error(e);
+    document.getElementById('status').textContent = 'Terjadi kesalahan server.';
+  } finally {
+    document.getElementById('bookBtn').disabled = false;
+  }
+});
+
+fetchAreas();
+</script>
+</body>
+</html>
